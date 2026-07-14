@@ -113,11 +113,33 @@ export function parse(parameters: string): ImageMeta {
     preprecessedMatchValuesList.push(matchData);
   });
 
-  const regex = /\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^"])+"|[^,]*)(?:,|$)/g;
-  let match;
-  while ((match = regex.exec(detailsLine)) !== null) {
-    let k = match[1];
-    const v = match[2].replace(/\\(.)/g, '$1');
+  // Split on commas, respecting JSON brackets and quoted strings
+  const splitOnCommas = (s: string): string[] => {
+    const parts: string[] = [];
+    let current = '';
+    let depth = 0;
+    let inQuote = false;
+    let escape = false;
+    for (const ch of s) {
+      if (escape) { current += ch; escape = false; continue; }
+      if (ch === '\\') { current += ch; escape = true; continue; }
+      if (ch === '"') { current += ch; inQuote = !inQuote; continue; }
+      if (inQuote) { current += ch; continue; }
+      if (ch === '{' || ch === '[') { depth++; current += ch; continue; }
+      if (ch === '}' || ch === ']') { depth--; current += ch; continue; }
+      if (ch === ',' && depth === 0) { parts.push(current.trim()); current = ''; continue; }
+      current += ch;
+    }
+    if (current) parts.push(current.trim());
+    return parts;
+  };
+
+  const reParamKv = /\s*([\w ]+):\s*(.*)/;
+  for (const part of splitOnCommas(detailsLine)) {
+    const kvMatch = part.match(reParamKv);
+    if (!kvMatch) continue;
+    let k = kvMatch[1];
+    const v = kvMatch[2].replace(/\\(.)/g, '$1');
     if (!k) continue;
     k = getImageMetaKey(k, imageMetaKeyMap);
     metadata[k.trim()] = tryParseJson((v ?? '').trim());

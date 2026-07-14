@@ -915,8 +915,47 @@ def read_sd_webui_gen_info_from_image(image: Image, path="") -> str:
     return geninfo
 
 
-re_param_code = r'\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^\"])+"|[^,]*)(?:,|$)'
-re_param = re.compile(re_param_code)
+def _split_params_on_commas(s: str) -> List[str]:
+    """Split on commas, respecting JSON brackets and quoted strings."""
+    parts: List[str] = []
+    current: List[str] = []
+    depth = 0
+    in_quote = False
+    escape = False
+    for ch in s:
+        if escape:
+            current.append(ch)
+            escape = False
+            continue
+        if ch == '\\':
+            current.append(ch)
+            escape = True
+            continue
+        if ch == '"':
+            current.append(ch)
+            in_quote = not in_quote
+            continue
+        if in_quote:
+            current.append(ch)
+            continue
+        if ch in ('{', '['):
+            depth += 1
+            current.append(ch)
+            continue
+        if ch in ('}', ']'):
+            depth -= 1
+            current.append(ch)
+            continue
+        if ch == ',' and depth == 0:
+            parts.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append(''.join(current).strip())
+    return parts
+
+
 re_imagesize = re.compile(r"^(\d+)x(\d+)$")
 re_lora_prompt = re.compile(r"<lora:([\w_\s.-]+)(?::([\d.]+))*>", re.IGNORECASE)
 re_lora_extract = re.compile(r"([\w_\s.-]+)(?:\d+)?")
@@ -991,7 +1030,8 @@ def parse_generation_parameters(x: str):
             pass
 
     *lines, lastline = x.strip().split("\n")
-    if len(re_param.findall(lastline)) < 3:
+    _re_param_kv = re.compile(r'\s*([\w ]+):\s*(.*)')
+    if sum(1 for part in _split_params_on_commas(lastline) if _re_param_kv.match(part)) < 3:
         lines.append(lastline)
         lastline = ""
     if len(lines) == 1 and lines[0].startswith("Postprocess"):  # 把上面改成<2应该也可以，当时不敢动
@@ -1010,7 +1050,12 @@ def parse_generation_parameters(x: str):
         else:
             prompt += ("" if prompt == "" else "\n") + line
 
-    for k, v in re_param.findall(lastline):
+    for part in _split_params_on_commas(lastline):
+        m_kv = _re_param_kv.match(part)
+        if not m_kv:
+            continue
+        k = m_kv.group(1).strip()
+        v = m_kv.group(2).strip()
         try:
             if len(v) == 0:
                 res[k] = v
@@ -1018,10 +1063,10 @@ def parse_generation_parameters(x: str):
             if v[0] == '"' and v[-1] == '"':
                 v = unquote(v)
 
-            m = re_imagesize.match(v)
-            if m is not None:
-                res[f"{k}-1"] = m.group(1)
-                res[f"{k}-2"] = m.group(2)
+            m_size = re_imagesize.match(v)
+            if m_size is not None:
+                res[f"{k}-1"] = m_size.group(1)
+                res[f"{k}-2"] = m_size.group(2)
             else:
                 res[k] = v
         except Exception:
