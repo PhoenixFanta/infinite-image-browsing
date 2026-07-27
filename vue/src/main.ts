@@ -10,6 +10,7 @@ import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { i18n } from './i18n'
 import VueDiff from 'vue-diff'
+import { setupPreviewWheelNormalization } from './util/imagePreviewOperation'
 
 import 'vue-diff/dist/index.css';
 
@@ -22,4 +23,7 @@ createApp(App)
     componentName: 'VueDiff',
   })
   .mount('#zanllp_dev_gradio_fe')
+
+// Fix overly aggressive zoom on macOS trackpads
+setupPreviewWheelNormalization()
 
